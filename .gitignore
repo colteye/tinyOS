@@ -1,0 +1,19 @@
+# Ignore build artifacts
+/build/
+/*.o
+/*.elf
+/*.bin
+/*.map
+/*.lst
+
+# Backup and temporary files
+*~
+*.swp
+*.swo
+*.bak
+
+# Ignore IDE/project-specific files (optional)
+.vscode/
+*.code-workspace
+.idea/
+*.iml
