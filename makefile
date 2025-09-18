@@ -10,8 +10,8 @@ CFLAGS  = -O0 -g -ffreestanding -nostdlib -Wall -Wextra -std=gnu99 \
 ASFLAGS = -mcpu=arm926ej-s
 LDFLAGS = -T linker.ld
 
-SRC_C = main.c drivers/uart.c os/task.c
-SRC_S = os/startup.S
+SRC_C = main.c drivers/uart.c os/exceptions.c os/scheduler.c
+SRC_S = os/startup.S os/vectors.S
 OBJS  = $(patsubst %.c,build/%.o,$(SRC_C)) $(patsubst %.S,build/%.o,$(SRC_S))
 
 all: $(TARGET)

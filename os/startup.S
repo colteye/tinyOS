@@ -1,6 +1,13 @@
 .global _Reset
+.extern main
+.extern stack_top
+
 _Reset:
-    LDR r0, =stack_top
-    MOV sp, r0
+    /* Initialize stack */
+    LDR sp, =stack_top
+
+    /* Call main() */
     BL main
-1:  B 1b
+
+hang:
+    B hang

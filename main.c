@@ -1,44 +1,35 @@
-#include "task.h"
-#include "uart.h"   // assume uart_puts is implemented
+#include "scheduler.h"
+#include "uart.h"
+#include <stdint.h>
 
 #define STACK_SIZE 1024
-
-// Preallocated stacks
 static uint32_t stack1[STACK_SIZE];
 static uint32_t stack2[STACK_SIZE];
 
-// Task control blocks
-static task_t task1, task2;
-
-// Example tasks
-void task_func1(void) {
+void task1(void) {
     while (1) {
-        uart_puts("Task 1\r\n");
-        task_yield();
+        uart_puts("Task 1 running\r\n");
+        //sleep(1000); // 1s
     }
 }
 
-void task_func2(void) {
+void task2(void) {
     while (1) {
-        uart_puts("Task 2 !!!\r\n");
-        task_yield();
+        uart_puts("Task 2 running\r\n");
+        //sleep(500); // 0.5s
     }
 }
 
 int main(void) {
-    // Initialize tasks
-    task_create(&task1, task_func1, stack1, STACK_SIZE);
-    task_create(&task2, task_func2, stack2, STACK_SIZE);
+    uart_puts("Booting...\r\n");
 
-    // Link tasks in circular list
-    task1.next = &task2;
-    task2.next = &task1;
+    scheduler_init();
+
+    task_create(task1, stack1, STACK_SIZE, 0);
+    task_create(task2, stack2, STACK_SIZE, 0);
 
     uart_puts("Starting scheduler...\r\n");
+    scheduler_start();
 
-    // Start scheduler
-    scheduler_start(&task1);
-
-    // Never reached
-    return 0;
+    while (1); // never reached
 }
