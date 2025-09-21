@@ -46,7 +46,7 @@ reset:
     msr cpsr_c,#0xDB        /* UND mode */
     ldr sp,=__stack_und_top
 
-    msr cpsr_c,#0xDF        /* SYS mode (start here!) */
+    msr cpsr_c,#0xDF        /* SYS mode */
     ldr sp,=__stack_sys_top
 
     /* Call main */
@@ -67,10 +67,16 @@ irq:
     subs pc,r14,#4
 
 svc:
-    push {r0-r12,r14}
-    bl svc_handler
-    pop {r0-r12,r14}
-    subs pc,r14,#4
+    stmfd sp!, {r0-r12, lr}      @ save regs and LR
+    mrs r0, spsr                  @ save SPSR
+    stmfd sp!, {r0}
+
+    bl svc_handler                 @ call C function
+
+    ldmfd sp!, {r0}               @ restore SPSR
+    msr spsr_cxsf, r0
+    ldmfd sp!, {r0-r12, lr}
+    movs pc, lr                   @ return, restores CPSR from SPSR
 
 /*-----------------------------------------------------
    IRQ helpers

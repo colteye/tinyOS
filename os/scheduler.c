@@ -213,7 +213,7 @@ void scheduler_tick(void) {
 
     sched.current = next_task;
     next_task->state = TASK_RUNNING;
-    task_switch(curr, next_task);
+   // task_switch(curr, next_task);
 }
 
 /* --- Ready queue helpers --- */

@@ -14,6 +14,7 @@
 #define TIMER0_MIS      (*(volatile unsigned int*)(TIMER0_BASE + 0x14))
 #define TIMER0_BGLOAD   (*(volatile unsigned int*)(TIMER0_BASE + 0x18))
 #define TIMER0_MS       (1000000)  // 1 ms = 1000 us
+#define TIMER0_IRQ_BIT  (1u << 4)  // check your SoC manual for exact mapping
 
 #define NVIC_BASE       (0x10140000)
 #define VICIRQSTATUS    (*(volatile unsigned int*)(NVIC_BASE + 0x000))
@@ -32,13 +33,21 @@ extern void interrupt_disable(void);
   IRQ handler
 -----------------------------------------------------------------*/
 void irq_handler(void) {
-    TIMER0_INTCLR = 0;   // Clear timer interrupt
-    __asm__ volatile("svc 0");  // request reschedule
+    if (VICIRQSTATUS & TIMER0_IRQ_BIT) {
+        // Clear timer0 interrupt in the timer peripheral
+        TIMER0_INTCLR = 0;
+        // Trigger a context switch
+        //uart_puts("SVC\r\n");
+        __asm__ volatile("svc 0");
+    }
 }
 
 /* SVC handler: calls scheduler_tick */
 void svc_handler(void) {
+        //uart_puts("SVC\r\n");
+    //interrupt_disable();
     scheduler_tick();
+    //interrupt_enable();
 }
 
 /*-----------------------------------------------------------------
@@ -52,16 +61,16 @@ static uint32_t idle_stack[STACK_SIZE];
 
 void task1(void) {
     while (1) {
-        //uart_puts("Task 1 running\r\n");
-        //sleep(1);
+       // uart_puts("Task 1 running\r\n");
+       // sleep(1);
         __asm__ volatile("nop");
     }
 }
 
 void task2(void) {
     while (1) {
-        //uart_puts("Task 2 running\r\n");
-        //sleep(5);
+       // uart_puts("Task 2 running\r\n");
+       // sleep(5);
         __asm__ volatile("nop");
     }
 }
