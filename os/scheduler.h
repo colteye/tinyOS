@@ -8,7 +8,7 @@
  * @brief Preemptive round-robin scheduler for ARM Cortex-M.
  *
  * Provides APIs for adding tasks, starting the scheduler, and handling
- * SysTick/PendSV-driven context switching.
+ * context switching.
  */
 
 /**
@@ -27,7 +27,7 @@ void task_create(void (*func)(void),
                  uint32_t *stack,
                  uint32_t size,
                  uint8_t priority);
-                 
+
 /**
  * @brief Put the current task to sleep for a given number of milliseconds.
  *
@@ -53,5 +53,15 @@ void scheduler_init(void);
  * - Does not return.
  */
 void scheduler_start(void);
+
+/**
+ * @brief Scheduler tick handler.
+ *
+ * Call from the timer interrupt only.
+ *
+ * Advances the system tick, updates sleep timers, and triggers task
+ * preemption if needed.
+ */
+void scheduler_tick(void);
 
 #endif // SCHEDULER_H

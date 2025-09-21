@@ -1,15 +1,53 @@
-ENTRY(_Reset)
+MEMORY
+{
+    vectors (rx) : ORIGIN = 0x00000000, LENGTH = 32
+    code    (rx) : ORIGIN = 0x00010000, LENGTH = 32K
+    ram     (rwx): ORIGIN = 0x00020000, LENGTH = 32M
+}
 
 SECTIONS
 {
-    .vectors 0x00000000 : { KEEP(*(.vectors)) }
+    /* Vector table at 0x0 */
+    .vectors ALIGN(4) : {
+        KEEP(*(.vectors))
+    } > vectors
 
-    . = 0x10000;
-    .text : { *(.text*) }
-    .data : { *(.data*) }
-    .bss  : { *(.bss*) *(COMMON) }
+    /* Code */
+    .text : {
+        _text_start = .;
+        *(.text*)
+        _text_end = .;
+    } > code
 
-    . = ALIGN(8);
-    . = . + 0x2000; /* 8 KB stack */
-    stack_top = .;
+    /* Read-only data */
+    .rodata ALIGN(4) : {
+        *(.rodata*)
+    } > code
+
+    /* Initialized data */
+    .data : {
+        _data_start = .;
+        *(.data*)
+        _data_end = .;
+    } > code
+
+    /* Uninitialized data (BSS) */
+    .bss (NOLOAD) : {
+        _bss_start = .;
+        *(.bss*)
+        *(COMMON)
+        _bss_end = .;
+    } > code
+
+    /*------------------------
+      Stacks in RAM
+    ------------------------*/
+    .stacks (NOLOAD) : ALIGN(8) {
+        __stack_fiq_top = . + 0x1000; . += 0x1000;
+        __stack_irq_top = . + 0x1000; . += 0x1000;
+        __stack_svc_top = . + 0x1000; . += 0x1000;
+        __stack_abt_top = . + 0x1000; . += 0x1000;
+        __stack_und_top = . + 0x1000; . += 0x1000;
+        __stack_sys_top = . + 0x1000; . += 0x1000;
+    } > ram
 }
