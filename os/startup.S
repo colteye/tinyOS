@@ -46,11 +46,8 @@ reset:
     msr cpsr_c,#0xDB        /* UND mode */
     ldr sp,=__stack_und_top
 
-    msr cpsr_c,#0xDF        /* SYS mode */
+    msr cpsr_c,#0xDF        /* SYS mode (start here!) */
     ldr sp,=__stack_sys_top
-
-    msr cpsr_c,#0xD3        /* switch back to SVC */
-    ldr sp,=__stack_svc_top
 
     /* Call main */
     bl main

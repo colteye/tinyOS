@@ -13,7 +13,7 @@
 #define TIMER0_RIS      (*(volatile unsigned int*)(TIMER0_BASE + 0x10))
 #define TIMER0_MIS      (*(volatile unsigned int*)(TIMER0_BASE + 0x14))
 #define TIMER0_BGLOAD   (*(volatile unsigned int*)(TIMER0_BASE + 0x18))
-#define TIMER0_MS       (1000)  // 1 ms = 1000 us
+#define TIMER0_MS       (1000000)  // 1 ms = 1000 us
 
 #define NVIC_BASE       (0x10140000)
 #define VICIRQSTATUS    (*(volatile unsigned int*)(NVIC_BASE + 0x000))
@@ -26,6 +26,7 @@
 
 // Enable IRQ globally (implemented in startup.S)
 extern void interrupt_enable(void);
+extern void interrupt_disable(void);
 
 /*-----------------------------------------------------------------
   IRQ handler
@@ -47,20 +48,30 @@ void svc_handler(void) {
 
 static uint32_t stack1[STACK_SIZE];
 static uint32_t stack2[STACK_SIZE];
+static uint32_t idle_stack[STACK_SIZE];
 
 void task1(void) {
     while (1) {
-        uart_puts("Task 1 running\r\n");
-        //sleep(1000);
+        //uart_puts("Task 1 running\r\n");
+        //sleep(1);
+        __asm__ volatile("nop");
     }
 }
 
 void task2(void) {
     while (1) {
-        uart_puts("Task 2 running\r\n");
-        //sleep(500);
+        //uart_puts("Task 2 running\r\n");
+        //sleep(5);
+        __asm__ volatile("nop");
     }
 }
+
+void idle(void) {
+    while (1) {
+        __asm__ volatile("nop");
+    }
+}
+
 
 /*-----------------------------------------------------------------
   Main
@@ -84,6 +95,7 @@ int main(void) {
     scheduler_init();
 
     // Create tasks
+    //task_create(idle, idle_stack, STACK_SIZE, 10);
     task_create(task1, stack1, STACK_SIZE, 0);
     task_create(task2, stack2, STACK_SIZE, 0);
 

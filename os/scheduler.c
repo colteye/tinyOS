@@ -43,10 +43,39 @@ typedef struct {
     uint32_t task_count;
 
     task_t *current;
-    uint32_t tick;
 } scheduler_t;
 
 static scheduler_t sched;
+
+
+static void uart_puthex(unsigned int value) {
+    static const char hexchars[] = "0123456789ABCDEF";
+    char buf[11]; // "0x" + 8 digits + null
+    buf[0] = '0';
+    buf[1] = 'x';
+    for (int i = 0; i < 8; i++) {
+        buf[9 - i] = hexchars[value & 0xF];
+        value >>= 4;
+    }
+    buf[10] = '\0';
+    uart_puts(buf);
+}
+
+static void uart_putdec(unsigned int value) {
+    char buf[11];
+    int i = 10;
+    buf[i] = '\0';
+    if (value == 0) {
+        buf[--i] = '0';
+    } else {
+        while (value > 0 && i > 0) {
+            buf[--i] = '0' + (value % 10);
+            value /= 10;
+        }
+    }
+    uart_puts(&buf[i]);
+}
+
 
 /* --- Forward declarations --- */
 static void ready_enqueue(task_t *t);
@@ -85,6 +114,10 @@ void task_create(void (*func)(void), uint32_t *stack, uint32_t size, uint8_t pri
     t->next = t->prev = NULL;
 
     ready_enqueue(t);
+    
+    uart_puts("TASK ADDED: ");
+    uart_puthex((uint32_t)t);
+    uart_puts("\r\n");
 }
 
 /* --- Sleep --- */
@@ -121,21 +154,35 @@ void scheduler_start(void) {
 }
 
 /* --- Scheduler tick: called from SVC --- */
+/* --- Scheduler tick: called from SVC --- */
 void scheduler_tick(void) {
-    sched.tick++;
+    uart_puts("\r\n[Scheduler Tick]\r\n");
 
     /* --- Wake sleeping tasks --- */
     task_t *t = sched.sleep_head;
     while (t) {
         task_t *next = t->next;
-        if (t->wake_tick > 0) t->wake_tick--;
+        if (t->wake_tick > 0) {
+            t->wake_tick--;
+            uart_puts(" Decrementing wake_tick for task ");
+            uart_puthex((uint32_t)t);
+            uart_puts(" -> ");
+            uart_putdec(t->wake_tick);
+            uart_puts("\r\n");
+        }
         if (t->wake_tick == 0) {
+            uart_puts(" Waking task ");
+            uart_puthex((uint32_t)t);
+            uart_puts("\r\n");
+
             t->state = TASK_READY;
+
             // Remove from sleep list
             if (t->prev) t->prev->next = t->next;
             if (t->next) t->next->prev = t->prev;
             if (sched.sleep_head == t) sched.sleep_head = t->next;
             t->next = t->prev = NULL;
+
             // Add back to ready queue
             ready_enqueue(t);
         }
@@ -146,12 +193,23 @@ void scheduler_tick(void) {
     task_t *curr = sched.current;
 
     if (curr && curr->state == TASK_RUNNING) {
+        uart_puts(" Current task still running: ");
+        uart_puthex((uint32_t)curr);
+        uart_puts(" (moving to back of queue)\r\n");
+
         curr->state = TASK_READY;
-        ready_enqueue(curr); // move to back of queue
+        ready_enqueue(curr); // safe, it's not in the queue anymore
     }
 
     task_t *next_task = pick_next_task();
-    if (!next_task) return;
+    if (!next_task) {
+        uart_puts(" No next task found, staying idle.\r\n");
+        return;
+    }
+
+    uart_puts(" Switching to next task: ");
+    uart_puthex((uint32_t)next_task);
+    uart_puts("\r\n");
 
     sched.current = next_task;
     next_task->state = TASK_RUNNING;
@@ -195,7 +253,10 @@ static task_t *pick_next_task(void) {
         bits &= ~(1u << p);
         task_t *cur = sched.ready_head[p];
         while (cur) {
-            if (cur->state == TASK_READY) return cur;
+            if (cur->state == TASK_READY) {
+                ready_dequeue(cur);   // remove before returning
+                return cur;
+            }
             cur = cur->next;
         }
     }
@@ -213,22 +274,33 @@ static void sleep_enqueue(task_t *t) {
 /* --- Low-level context switch --- */
 __attribute__((naked)) void task_switch(task_t *current, task_t *next) {
     __asm__ volatile (
-        "push {r4-r11}\n"
-        "mov r2, r0\n"
-        "add r2, #12\n"       // current->regs
-        "pop {r4-r11}\n"
-        "stmia r2, {r4-r11}\n"
-        "str sp, [r0, #8]\n"
-        "str lr, [r0, #44]\n"
-        "adr r3, 1f\n"
-        "str r3, [r0, #48]\n"
-        "add r2, r1, #12\n"
-        "ldmia r2, {r4-r11}\n"
-        "ldr sp, [r1, #8]\n"
-        "ldr lr, [r1, #44]\n"
-        "ldr r3, [r1, #48]\n"
-        "bx r3\n"
-        "1:\n"
+        /* --- Save SVC CPSR --- */
+        "mrs r12, cpsr\n"
+
+        /* --- Switch to System mode --- */
+        "mrs r2, cpsr\n"
+        "bic r2, r2, #0x1F\n"
+        "orr r2, r2, #0x1F\n"
+        "msr cpsr_c, r2\n"
+
+        /* --- Save current task context --- */
+        "stmfd sp!, {r4-r11}\n"          // save callee-saved
+        "str sp, [r0, #8]\n"             // current->sp
+        "str lr, [r0, #44]\n"            // current->lr
+        "add r3, r0, #12\n"
+        "stmia r3, {r4-r11}\n"           // current->regs
+
+        /* --- Restore next task context --- */
+        "add r3, r1, #12\n"
+        "ldmia r3, {r4-r11}\n"           // next->regs
+        "ldr sp, [r1, #8]\n"             // next->sp
+        "ldr lr, [r1, #44]\n"            // next->lr
+
+        /* --- Switch back to SVC mode --- */
+        "msr cpsr_c, r12\n"
+
+        /* --- Return normally from SVC --- */
         "bx lr\n"
     );
 }
+
