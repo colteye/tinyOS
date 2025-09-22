@@ -2,7 +2,7 @@
 #include <stdint.h>
 #include "uart.h"
 
-#define NULL (0)
+#define NULL ((void*)0)
 #define MAX_PRIORITIES (32U)
 #define MAX_TASKS      (16U)
 
@@ -21,6 +21,7 @@ typedef struct task {
     uint32_t *sp;
     uint32_t regs[8];
     uint32_t lr;
+    uint32_t cpsr;       // saved CPSR of task
 
     struct task *next; // for ready/sleep lists
     struct task *prev;
@@ -43,6 +44,12 @@ typedef struct {
 
     task_t *current;
 } scheduler_t;
+
+
+/* Globals used only by the SVC assembly wrapper to perform the switch */
+volatile task_t *svc_switch_from = NULL; /* set by scheduler_tick() */
+volatile task_t *svc_switch_to   = NULL; /* set by scheduler_tick() */
+
 
 static scheduler_t sched;
 
@@ -88,9 +95,6 @@ static void memset(void *dst, int val, uint32_t n) {
     while (n--) *p++ = (uint8_t)val;
 }
 
-/* --- Context switch (ARM naked) --- */
-__attribute__((naked)) void task_switch(task_t *current, task_t *next);
-
 /* --- API --- */
 void scheduler_init(void) {
     memset(&sched, 0, sizeof(sched));
@@ -103,9 +107,27 @@ void task_create(void (*func)(void), uint32_t *stack, uint32_t size, uint8_t pri
     task_t *t = &sched.task_pool[sched.task_count++];
     t->stack = stack;
     t->stack_size = size;
-    t->sp = stack + size - 16; // reserve space for context save
+
+    // Start SP at top of stack (stack grows down)
+    uint32_t *sp = stack + size - 16;
+
+    // --- Reserve space for initial context frame ---
+    // Simulate what the CPU pushes on preemption:
+    // r0-r3, r12, lr, cpsr, r4-r11
+                            // reserve 16 words
+    memset(sp, 0, 16 * 4);  // zero context initially
+
+    // Fill initial LR and CPSR
+    sp[14] = (uint32_t)func;   // lr = task entry point
+    sp[15] = 0x10;             // CPSR = SYS mode, interrupts enabled
+
+    t->sp = sp;                 // initial SP points to this frame
+
+    // Zero registers in TCB (r4-r11 stored separately in regs[])
     memset(t->regs, 0, sizeof(t->regs));
-    t->lr = (uint32_t)func;    // store task entry point in LR
+
+    t->lr = (uint32_t)func;    // fallback
+    t->cpsr = 0x1F;            // SYS mode
     t->priority = priority & 31;
     t->state = TASK_READY;
     t->wake_tick = 0;
@@ -142,6 +164,14 @@ void scheduler_start(void) {
 
     sched.current = first;
     first->state = TASK_RUNNING;
+
+    uart_puts("START DATA:\r\n");
+    uart_puts("CURR SP:   ");
+    uart_puthex((uint32_t)first->sp);
+    uart_puts("\r\n");
+    uart_puts("CURR LR:   ");
+    uart_puthex((uint32_t)first->lr);
+    uart_puts("\r\n");
 
     __asm__ volatile(
         "msr cpsr_c, #0x1F\n"     // SYS mode
@@ -208,13 +238,36 @@ void scheduler_tick(void) {
         return;
     }
 
-    uart_puts(" Switching to next task: ");
+    sched.current = next_task;
+    next_task->state = TASK_RUNNING;
+
+    /* request a context switch: the assembly SVC wrapper will perform it */
+    svc_switch_from = curr;
+    svc_switch_to   = next_task;
+    
+    uart_puts("TASK DATA:\r\n");
+    uart_puts("CURR:   ");
+    uart_puthex((uint32_t)curr);
+    uart_puts("\r\n");
+    uart_puts("NEXT:   ");
     uart_puthex((uint32_t)next_task);
     uart_puts("\r\n");
 
-    sched.current = next_task;
-    next_task->state = TASK_RUNNING;
-    task_switch(curr, next_task);
+    uart_puts("STUFF:\r\n");
+    uart_puts("CURR SP:   ");
+    uart_puthex((uint32_t)curr->sp);
+    uart_puts("\r\n");
+    uart_puts("CURR LR:   ");
+    uart_puthex((uint32_t)curr->lr);
+    uart_puts("\r\n");
+
+    uart_puts("STUFF:\r\n");
+    uart_puts("NEXT SP:   ");
+    uart_puthex((uint32_t)next_task->sp);
+    uart_puts("\r\n");
+    uart_puts("NEXT LR:   ");
+    uart_puthex((uint32_t)next_task->lr);
+    uart_puts("\r\n");
 }
 
 /* --- Ready queue helpers --- */
@@ -271,36 +324,3 @@ static void sleep_enqueue(task_t *t) {
     if (sched.sleep_head) sched.sleep_head->prev = t;
     sched.sleep_head = t;
 }
-
-/* --- Low-level context switch --- */
-__attribute__((naked)) void task_switch(task_t *current, task_t *next) {
-    __asm__ volatile (
-
-        /* --- Switch to System mode --- */
-        "mrs r2, cpsr\n"
-        "bic r2, r2, #0x1F\n"
-        "orr r2, r2, #0x1F\n"
-        "msr cpsr_c, r2\n"
-
-        /* --- Save current task context --- */
-        "str sp, [r0, #8]\n"             // current->sp
-        "str lr, [r0, #44]\n"            // current->lr
-        "add r3, r0, #12\n"
-        "stmia r3, {r4-r11}\n"           // current->regs
-
-        /* --- Restore next task context --- */
-        "add r3, r1, #12\n"
-        "ldmia r3, {r4-r11}\n"           // next->regs
-        "ldr sp, [r1, #8]\n"             // next->sp
-        "ldr lr, [r1, #44]\n"            // next->lr
-        
-        /* --- Switch to System mode --- */
-        "mrs r2, cpsr\n"
-        "bic r2, r2, #0x1F\n"
-        "orr r2, r2, #0x13\n"
-        "msr cpsr_c, r2\n"
-
-        "subs pc, lr, #4"
-    );
-}
-

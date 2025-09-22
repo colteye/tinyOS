@@ -1,4 +1,17 @@
 /*-----------------------------------------------------
+   SVC vector (minimal save of SPSR+LR only)
+------------------------------------------------------*/
+    .extern svc_handler         /* existing C handler */
+    .extern svc_switch_from     /* defined in C */
+    .extern svc_switch_to
+
+.global svc
+.type svc, %function
+.global irq
+.type irq, %function
+
+
+/*-----------------------------------------------------
    Vector table at 0x0
 ------------------------------------------------------*/
 .section .vectors, "a"
@@ -18,6 +31,7 @@ _start:
 ------------------------------------------------------*/
 .section .text
 .global reset
+.type reset, %function
 
 /* Linker-provided stack symbols */
 .extern __stack_fiq_top
@@ -78,21 +92,51 @@ irq:
     ldmfd sp!, {r0-r12, lr}
     movs pc, lr                   @ return, restores CPSR from SPSR*/
 
-/*-----------------------------------------------------
-   SVC vector (minimal save of SPSR+LR only)
-------------------------------------------------------*/
-svc:
-    mrs r0, spsr          /* save SPSR */
-    stmfd sp!, {r0, lr}   /* push SPSR and LR on SVC stack */
-    bl svc_handler        /* call C svc handler */
 
-    /* restore and return:
-       pop SPSR (r0), LR (lr)
-       restore SPSR -> CPSR, then movs pc, lr (return to task)
-    */
-    ldmfd sp!, {r0, lr}
-    msr spsr_cxsf, r0
-    movs pc, lr
+svc:
+    /* --- Save SPSR + SVC LR on SVC stack --- */
+    mrs r0, spsr
+    stmfd sp!, {r0, lr}        /* save SPSR and SVC LR */
+
+    bl svc_handler             /* sets svc_switch_from / svc_switch_to */
+
+    ldr r1, =svc_switch_to
+    ldr r1, [r1]
+    //cmp r1, #0
+    //beq 1f                     /* no switch requested */
+
+    ldr r0, =svc_switch_from
+    ldr r0, [r0]
+
+    /* --- Switch to System mode to access banked regs --- */
+    mrs r2, cpsr
+    bic r2, r2, #0x1F
+    orr r2, r2, #0x1F         /* SYS mode */
+    orr r2, r2,#0x80          /* disable interrupts */
+    msr cpsr_c, r2
+
+    add r3, r0, #12
+    stmia r3, {r4-r11}         /* current->regs */
+    str sp, [r0, #8]           /* current->sp */
+    str lr, [r0, #44]          /* current->lr */
+    mrs r2, cpsr
+    str r2, [r0, #48]          /* current->cpsr */
+
+    /* --- Restore next task context --- */
+    add r3, r1, #12
+    ldmia r3, {r4-r11}         /* next->regs */
+    ldr sp, [r1, #8]           /* next->sp */
+    ldr lr, [r1, #44]          /* next->lr */
+    ldr r2, [r1, #48]          /* load next CPSR */
+    msr cpsr_cxsf, r2          /* restore CPSR */
+
+    /* --- Return to next task in SYS mode --- */
+    bx lr
+
+//1:  /* No switch requested: restore old SPSR + LR */
+//    ldmfd sp!, {r0, lr}
+//    msr spsr_cxsf, r0
+//    movs pc, lr
 
 /*-----------------------------------------------------
    IRQ helpers

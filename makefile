@@ -8,7 +8,7 @@ CFLAGS  = -O0 -g -ffreestanding -nostdlib -Wall -Wextra -std=gnu99 \
           -mcpu=arm926ej-s -marm \
           -I. -Ios -Idrivers
 ASFLAGS = -mcpu=arm926ej-s
-LDFLAGS = -T linker.ld
+LDFLAGS =  -g -T linker.ld
 
 SRC_C = main.c drivers/uart.c os/scheduler.c # add other C files as needed
 SRC_S = os/startup.S
