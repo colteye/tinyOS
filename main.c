@@ -37,7 +37,7 @@ void irq_handler(void) {
         // Clear timer0 interrupt in the timer peripheral
         TIMER0_INTCLR = 0;
         // Trigger a context switch
-        //uart_puts("SVC\r\n");
+        uart_puts("SVC\r\n");
         __asm__ volatile("svc 0");
     }
 }
@@ -61,7 +61,7 @@ static uint32_t idle_stack[STACK_SIZE];
 
 void task1(void) {
     while (1) {
-       // uart_puts("Task 1 running\r\n");
+       uart_puts("Task 1 running\r\n");
        // sleep(1);
         __asm__ volatile("nop");
     }
@@ -69,7 +69,7 @@ void task1(void) {
 
 void task2(void) {
     while (1) {
-       // uart_puts("Task 2 running\r\n");
+       uart_puts("Task 2\r\n");
        // sleep(5);
         __asm__ volatile("nop");
     }

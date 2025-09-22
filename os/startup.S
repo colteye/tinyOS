@@ -66,7 +66,7 @@ irq:
     pop {r0-r12,r14}
     subs pc,r14,#4
 
-svc:
+/*svc:
     stmfd sp!, {r0-r12, lr}      @ save regs and LR
     mrs r0, spsr                  @ save SPSR
     stmfd sp!, {r0}
@@ -76,7 +76,23 @@ svc:
     ldmfd sp!, {r0}               @ restore SPSR
     msr spsr_cxsf, r0
     ldmfd sp!, {r0-r12, lr}
-    movs pc, lr                   @ return, restores CPSR from SPSR
+    movs pc, lr                   @ return, restores CPSR from SPSR*/
+
+/*-----------------------------------------------------
+   SVC vector (minimal save of SPSR+LR only)
+------------------------------------------------------*/
+svc:
+    mrs r0, spsr          /* save SPSR */
+    stmfd sp!, {r0, lr}   /* push SPSR and LR on SVC stack */
+    bl svc_handler        /* call C svc handler */
+
+    /* restore and return:
+       pop SPSR (r0), LR (lr)
+       restore SPSR -> CPSR, then movs pc, lr (return to task)
+    */
+    ldmfd sp!, {r0, lr}
+    msr spsr_cxsf, r0
+    movs pc, lr
 
 /*-----------------------------------------------------
    IRQ helpers

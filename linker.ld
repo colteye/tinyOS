@@ -5,6 +5,8 @@ MEMORY
     ram     (rwx): ORIGIN = 0x00020000, LENGTH = 32M
 }
 
+/* ... */
+
 SECTIONS
 {
     /* Vector table at 0x0 */
@@ -19,28 +21,27 @@ SECTIONS
         _text_end = .;
     } > code
 
-    /* Read-only data */
     .rodata ALIGN(4) : {
         *(.rodata*)
     } > code
 
-    /* Initialized data */
+    /* Initialized data -> RAM! */
     .data : {
         _data_start = .;
         *(.data*)
         _data_end = .;
-    } > code
+    } > ram
 
-    /* Uninitialized data (BSS) */
+    /* Uninitialized data (BSS) -> RAM! */
     .bss (NOLOAD) : {
         _bss_start = .;
         *(.bss*)
         *(COMMON)
         _bss_end = .;
-    } > code
+    } > ram
 
     /*------------------------
-      Stacks in RAM
+      Stacks in RAM (keep banking stacks here)
     ------------------------*/
     .stacks (NOLOAD) : ALIGN(8) {
         __stack_fiq_top = . + 0x1000; . += 0x1000;

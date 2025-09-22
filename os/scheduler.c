@@ -21,7 +21,6 @@ typedef struct task {
     uint32_t *sp;
     uint32_t regs[8];
     uint32_t lr;
-    uint32_t pc;
 
     struct task *next; // for ready/sleep lists
     struct task *prev;
@@ -106,15 +105,14 @@ void task_create(void (*func)(void), uint32_t *stack, uint32_t size, uint8_t pri
     t->stack_size = size;
     t->sp = stack + size - 16; // reserve space for context save
     memset(t->regs, 0, sizeof(t->regs));
-    t->lr = 0;
-    t->pc = (uint32_t)func;
+    t->lr = (uint32_t)func;    // store task entry point in LR
     t->priority = priority & 31;
     t->state = TASK_READY;
     t->wake_tick = 0;
     t->next = t->prev = NULL;
 
     ready_enqueue(t);
-    
+
     uart_puts("TASK ADDED: ");
     uart_puthex((uint32_t)t);
     uart_puts("\r\n");
@@ -146,12 +144,15 @@ void scheduler_start(void) {
     first->state = TASK_RUNNING;
 
     __asm__ volatile(
-        "mov sp, %0\n"
-        "bx %1\n"
+        "msr cpsr_c, #0x1F\n"     // SYS mode
+        "mov sp, %0\n"      // set stack pointer to task's SP
+        "mov lr, %1\n"      // load LR from TCB
+        "bx lr\n"           // branch to LR (resumes task)
         :
-        : "r"(first->sp), "r"(first->pc)
+        : "r"(first->sp), "r"(first->lr)
     );
 }
+
 
 /* --- Scheduler tick: called from SVC --- */
 /* --- Scheduler tick: called from SVC --- */
@@ -213,7 +214,7 @@ void scheduler_tick(void) {
 
     sched.current = next_task;
     next_task->state = TASK_RUNNING;
-   // task_switch(curr, next_task);
+    task_switch(curr, next_task);
 }
 
 /* --- Ready queue helpers --- */
@@ -274,8 +275,6 @@ static void sleep_enqueue(task_t *t) {
 /* --- Low-level context switch --- */
 __attribute__((naked)) void task_switch(task_t *current, task_t *next) {
     __asm__ volatile (
-        /* --- Save SVC CPSR --- */
-        "mrs r12, cpsr\n"
 
         /* --- Switch to System mode --- */
         "mrs r2, cpsr\n"
@@ -284,7 +283,6 @@ __attribute__((naked)) void task_switch(task_t *current, task_t *next) {
         "msr cpsr_c, r2\n"
 
         /* --- Save current task context --- */
-        "stmfd sp!, {r4-r11}\n"          // save callee-saved
         "str sp, [r0, #8]\n"             // current->sp
         "str lr, [r0, #44]\n"            // current->lr
         "add r3, r0, #12\n"
@@ -295,12 +293,14 @@ __attribute__((naked)) void task_switch(task_t *current, task_t *next) {
         "ldmia r3, {r4-r11}\n"           // next->regs
         "ldr sp, [r1, #8]\n"             // next->sp
         "ldr lr, [r1, #44]\n"            // next->lr
+        
+        /* --- Switch to System mode --- */
+        "mrs r2, cpsr\n"
+        "bic r2, r2, #0x1F\n"
+        "orr r2, r2, #0x13\n"
+        "msr cpsr_c, r2\n"
 
-        /* --- Switch back to SVC mode --- */
-        "msr cpsr_c, r12\n"
-
-        /* --- Return normally from SVC --- */
-        "bx lr\n"
+        "subs pc, lr, #4"
     );
 }
 

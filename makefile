@@ -37,7 +37,8 @@ run: $(TARGET)
 	qemu-system-arm -M versatilepb -m 32M \
 	-cpu arm926 \
 	-kernel $(TARGET) \
-	-serial mon:vc
+	-serial mon:vc \
+	 -S -gdb tcp::1234
 
 clean:
 	rm -rf build $(TARGET)
