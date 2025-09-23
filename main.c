@@ -43,24 +43,20 @@ void irq_handler(void) {
 
 /* SVC handler: calls scheduler_tick */
 void svc_handler(void) {
-        //uart_puts("SVC\r\n");
-    //interrupt_disable();
     scheduler_tick();
-    //interrupt_enable();
 }
 
 /*-----------------------------------------------------------------
   Tasks
 -----------------------------------------------------------------*/
-#define STACK_SIZE (4096)
+#define STACK_SIZE (4096 / 4)
 
 static uint32_t stack1[STACK_SIZE];
 static uint32_t stack2[STACK_SIZE];
 
 void task1(void) {
     while (1) {
-        const char *msg = "Task 1 running\r\n"; // stored in ROM
-       uart_puts(msg );
+       uart_puts("TASK 1\r\n");
        // sleep(1);
         __asm__ volatile("nop");
     }
@@ -68,8 +64,7 @@ void task1(void) {
 
 void task2(void) {
     while (1) {
-        const char *msg = "Task 2\r\n"; // stored in ROM
-       uart_puts(msg );
+       uart_puts("TASK 222\r\n");
        // sleep(5);
         __asm__ volatile("nop");
     }

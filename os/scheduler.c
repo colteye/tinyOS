@@ -15,20 +15,21 @@ typedef enum {
 } task_state_t;
 
 /* --- Task Control Block --- */
-typedef struct task {
+typedef struct task 
+{
     uint32_t *stack;
     uint32_t stack_size;
     uint32_t *sp;
-    uint32_t regs[8];
+    uint32_t regs[13];
     uint32_t lr;
     uint32_t cpsr;       // saved CPSR of task
 
     struct task *next; // for ready/sleep lists
     struct task *prev;
 
-    uint8_t priority;
     task_state_t state;
     uint32_t wake_tick;
+    uint8_t priority;
 } task_t;
 
 /* --- Scheduler state --- */
@@ -49,7 +50,6 @@ typedef struct {
 /* Globals used only by the SVC assembly wrapper to perform the switch */
 volatile task_t *svc_switch_from = NULL; /* set by scheduler_tick() */
 volatile task_t *svc_switch_to   = NULL; /* set by scheduler_tick() */
-
 
 static scheduler_t sched;
 
@@ -109,19 +109,7 @@ void task_create(void (*func)(void), uint32_t *stack, uint32_t size, uint8_t pri
     t->stack_size = size;
 
     // Start SP at top of stack (stack grows down)
-    uint32_t *sp = stack + size - 16;
-
-    // --- Reserve space for initial context frame ---
-    // Simulate what the CPU pushes on preemption:
-    // r0-r3, r12, lr, cpsr, r4-r11
-                            // reserve 16 words
-    memset(sp, 0, 16 * 4);  // zero context initially
-
-    // Fill initial LR and CPSR
-    sp[14] = (uint32_t)func;   // lr = task entry point
-    sp[15] = 0x10;             // CPSR = SYS mode, interrupts enabled
-
-    t->sp = sp;                 // initial SP points to this frame
+    t->sp = &stack[size - 1];
 
     // Zero registers in TCB (r4-r11 stored separately in regs[])
     memset(t->regs, 0, sizeof(t->regs));
